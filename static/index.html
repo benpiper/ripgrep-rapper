@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ripgrep Rapper</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1 class="graffiti-text">RIPGREP RAPPER</h1>
+            <p class="subtitle">Spit hot fire locally. Search your flows.</p>
+        </header>
+
+        <section class="control-panel">
+            <div class="input-group">
+                <label for="search-path">THE HOOD (Search Path)</label>
+                <input type="text" id="search-path" placeholder="." value="." required>
+            </div>
+
+            <div id="query-container">
+                <div class="query-row">
+                    <div class="input-group">
+                        <label>FREESTYLE (Query)</label>
+                        <input type="text" class="query-input" placeholder="Drop the phone #, email, or name..."
+                            required>
+                    </div>
+                    <div class="input-group">
+                        <label>FLOW TYPE</label>
+                        <select class="type-select">
+                            <option value="phone">Phone Number (Digits)</option>
+                            <option value="email">Email</option>
+                            <option value="name">Name</option>
+                            <option value="generic">Generic</option>
+                        </select>
+                    </div>
+                    <button class="remove-btn" onclick="removeRow(this)" style="display:none;">X</button>
+                </div>
+            </div>
+
+            <button id="add-query-btn" class="secondary-btn">+ Add Another Flow</button>
+
+            <div class="settings-row">
+                <div class="input-group">
+                    <label for="context">BARS (Context lines)</label>
+                    <input type="number" id="context" value="5" min="1" max="20">
+                </div>
+                <div class="input-group checkbox-group">
+                    <input type="checkbox" id="fold" checked>
+                    <label for="fold">FOLD LONG RHYMES</label>
+                </div>
+            </div>
+
+            <button id="search-btn" class="mic-check-btn">MIC CHECK (Search)</button>
+        </section>
+
+        <section id="results" class="results-area">
+            <div id="status-msg" class="status-msg">Ready to drop the beat...</div>
+            <div id="command-executed" class="command-box"></div>
+            <div id="variations-used" class="variations-list"></div>
+            <div id="matches-container" class="matches-container"></div>
+        </section>
+    </div>
+
+    <script>
+        document.getElementById('add-query-btn').addEventListener('click', () => {
+            const container = document.getElementById('query-container');
+            const firstRow = container.querySelector('.query-row');
+            const newRow = firstRow.cloneNode(true);
+
+            // Clear input
+            newRow.querySelector('.query-input').value = '';
+            // Show remove button
+            newRow.querySelector('.remove-btn').style.display = 'inline-block';
+
+            container.appendChild(newRow);
+            updateRemoveButtons();
+        });
+
+        function removeRow(btn) {
+            btn.closest('.query-row').remove();
+            updateRemoveButtons();
+        }
+
+        function updateRemoveButtons() {
+            const rows = document.querySelectorAll('.query-row');
+            const removeBtns = document.querySelectorAll('.remove-btn');
+            if (rows.length === 1) {
+                removeBtns.forEach(b => b.style.display = 'none');
+            } else {
+                removeBtns.forEach(b => b.style.display = 'inline-block');
+            }
+        }
+
+        document.getElementById('search-btn').addEventListener('click', async () => {
+            const searchPath = document.getElementById('search-path').value;
+            const context = parseInt(document.getElementById('context').value);
+            const fold = document.getElementById('fold').checked;
+
+            const queries = [];
+            document.querySelectorAll('.query-row').forEach(row => {
+                const q = row.querySelector('.query-input').value;
+                const t = row.querySelector('.type-select').value;
+                if (q.trim()) {
+                    queries.push({ query: q, type: t });
+                }
+            });
+
+            const resultsDiv = document.getElementById('matches-container');
+            const statusDiv = document.getElementById('status-msg');
+            const variationsDiv = document.getElementById('variations-used');
+            const commandDiv = document.getElementById('command-executed');
+
+            if (queries.length === 0) {
+                statusDiv.textContent = "You need to spit some bars first! (Enter a query)";
+                return;
+            }
+
+            statusDiv.textContent = "Dropping the beat... (Previewing Flow)";
+            resultsDiv.innerHTML = '';
+            variationsDiv.textContent = '';
+            commandDiv.textContent = '';
+
+            const requestBody = JSON.stringify({ queries: queries, search_path: searchPath, context, fold });
+
+            try {
+                // Peek the track first (Get command)
+                const previewResp = await fetch('/search/preview', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: requestBody
+                });
+
+                if (previewResp.ok) {
+                    const previewData = await previewResp.json();
+                    commandDiv.textContent = `$ ${previewData.command_executed}`;
+                }
+
+                statusDiv.textContent = "Dropping the beat... (Searching)";
+
+                // Now execute the full flow
+                const response = await fetch('/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: requestBody
+                });
+
+                if (!response.ok) {
+                    throw new Error("Search failed");
+                }
+
+                const data = await response.json();
+
+                statusDiv.textContent = `Dropped ${data.total_matches} matches`;
+                variationsDiv.textContent = `Variations used: ${JSON.stringify(data.variations)}`;
+                // Update it again just in case, but preview should have set it
+                commandDiv.textContent = `$ ${data.command_executed}`;
+
+                if (data.matches.length === 0) {
+                    resultsDiv.innerHTML = '<div class="no-matches">No bars found for this flow.</div>';
+                    return;
+                }
+
+                let html = '';
+                let lastLineNum = -1;
+                let lastFilePath = null;
+
+                data.matches.forEach(match => {
+                    // Check if file changed
+                    if (match.file_path !== lastFilePath) {
+                        html += `<div class="file-header">${escapeHtml(match.file_path)}</div>`;
+                        lastFilePath = match.file_path;
+                        lastLineNum = -1; // Reset line num tracking for new file
+                    }
+
+                    // Add a separator if there's a gap in line numbers (within the same file)
+                    if (lastLineNum !== -1 && match.line_number > lastLineNum + 1) {
+                        html += '<div class="separator">--- Scratch ---</div>';
+                    }
+
+                    const lineClass = match.is_match ? 'line match' : 'line context';
+                    html += `<div class="${lineClass}"><span class="line-num">${match.line_number}</span> <span class="content">${escapeHtml(match.content)}</span></div>`;
+                    lastLineNum = match.line_number;
+                });
+
+                resultsDiv.innerHTML = html;
+
+            } catch (error) {
+                statusDiv.textContent = "Production Error: " + error.message;
+            }
+        });
+
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+
+</html>

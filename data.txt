@@ -1,0 +1,24 @@
+This is a test file for ripgrep rapper.
+We drop bars and find numbers.
+
+Line 3: Here is a number 404-555-1234 within some text.
+Line 4: Another format: (404) 555-1234 is also valid.
+Line 5: Just digits 4045551234 representation.
+Line 6: Garbage text.
+Line 7: More garbage.
+Line 8: Even more garbage.
+Line 9: Context line before.
+Line 10: Context line before that.
+Line 11: 404-555-1234 showing up again.
+Line 12: Context line after.
+Line 13: Context line after that.
+
+Long line test:
+This is a very long line that should be folded because it contains a lot of text but we only care about the match which is 404-555-1234 right here in the middle, and then the line continues for a very long time with irrelevant information that should probably be truncated by our folding logic if it works correctly. This represents a minified JS file or something similar.
+
+Another long line without match:
+This is just a long line with no match in it. It might show up as context if it's near a match. We want to see how the folding handles context lines that are super long but don't contain the highlighted term. It should truncate the end.
+
+404.555.1234 (Dot notation, might not be covered by current regex but let's see).
+
+End of file.
