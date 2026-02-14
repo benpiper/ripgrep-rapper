@@ -18,7 +18,11 @@
         <section class="control-panel">
             <div class="input-group">
                 <label for="search-path">THE HOOD (Search Path)</label>
-                <input type="text" id="search-path" placeholder="." value="." required>
+                <div class="path-input-row">
+                    <input type="text" id="search-path" placeholder="." value="." required>
+                    <button id="scope-btn" class="scope-btn" onclick="scopePath()">SCOPE IT</button>
+                </div>
+                <div id="path-info" class="path-info"></div>
             </div>
 
             <div id="query-container">
@@ -70,6 +74,60 @@
     </div>
 
     <script>
+        // Auto-scope on load
+        window.addEventListener('DOMContentLoaded', () => scopePath());
+
+        async function scopePath() {
+            const searchPath = document.getElementById('search-path').value;
+            const infoDiv = document.getElementById('path-info');
+            const scopeBtn = document.getElementById('scope-btn');
+
+            scopeBtn.disabled = true;
+            scopeBtn.textContent = '...';
+            infoDiv.textContent = 'Scoping...';
+            infoDiv.className = 'path-info';
+
+            try {
+                const resp = await fetch('/search/pathinfo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ search_path: searchPath })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    infoDiv.textContent = err.detail || 'Invalid path';
+                    infoDiv.classList.add('path-error');
+                    return;
+                }
+
+                const data = await resp.json();
+                const sizeMB = (data.total_size_bytes / (1024 * 1024)).toFixed(2);
+                const sizeGB = (data.total_size_bytes / (1024 * 1024 * 1024)).toFixed(2);
+                const sizeStr = data.total_size_bytes > 1024 * 1024 * 1024 ? `${sizeGB} GB` : `${sizeMB} MB`;
+
+                let timeStr;
+                if (data.est_search_seconds < 0.01) {
+                    timeStr = '< 1ms';
+                } else if (data.est_search_seconds < 1) {
+                    timeStr = `~${Math.round(data.est_search_seconds * 1000)}ms`;
+                } else {
+                    timeStr = `~${data.est_search_seconds.toFixed(1)}s`;
+                }
+
+                infoDiv.innerHTML = `<span class="path-resolved">${data.resolved_path}</span> ` +
+                    `<span class="path-stats">${data.file_count} files &bull; ${sizeStr} &bull; Est. ${timeStr} @ 10k RPM</span>`;
+            } catch (e) {
+                infoDiv.textContent = 'Error: ' + e.message;
+                infoDiv.classList.add('path-error');
+            } finally {
+                scopeBtn.disabled = false;
+                scopeBtn.textContent = 'SCOPE IT';
+            }
+        }
+
+        document.getElementById('search-path').addEventListener('change', () => scopePath());
+
         document.getElementById('add-query-btn').addEventListener('click', () => {
             const container = document.getElementById('query-container');
             const firstRow = container.querySelector('.query-row');

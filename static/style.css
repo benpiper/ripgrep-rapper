@@ -94,6 +94,59 @@ select {
     border-radius: 4px;
 }
 
+.path-input-row {
+    display: flex;
+    gap: 8px;
+}
+
+.path-input-row input {
+    flex: 1;
+}
+
+.scope-btn {
+    background-color: transparent;
+    border: 2px solid var(--accent-tertiary);
+    color: var(--accent-tertiary);
+    padding: 8px 16px;
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.scope-btn:hover {
+    background-color: var(--accent-tertiary);
+    color: #000;
+}
+
+.scope-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.path-info {
+    margin-top: 8px;
+    font-family: var(--font-code);
+    font-size: 0.8rem;
+    color: #888;
+    min-height: 1.2em;
+}
+
+.path-info.path-error {
+    color: #ff4444;
+}
+
+.path-resolved {
+    color: var(--accent-primary);
+}
+
+.path-stats {
+    color: #aaa;
+    margin-left: 8px;
+}
+
 input[type="text"]:focus,
 input[type="number"]:focus,
 select:focus {

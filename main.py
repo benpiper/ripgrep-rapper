@@ -313,6 +313,48 @@ async def search(request: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class PathInfoRequest(BaseModel):
+    search_path: str = "."
+
+
+@app.post("/search/pathinfo")
+async def path_info(request: PathInfoRequest):
+    """Return resolved path, total size, file count, and estimated search time."""
+    try:
+        safe_path = validate_search_path(request.search_path)
+        resolved = Path(safe_path)
+
+        total_size = 0
+        file_count = 0
+
+        if resolved.is_file():
+            total_size = resolved.stat().st_size
+            file_count = 1
+        elif resolved.is_dir():
+            for f in resolved.rglob("*"):
+                if f.is_file():
+                    try:
+                        total_size += f.stat().st_size
+                        file_count += 1
+                    except (PermissionError, OSError):
+                        continue
+
+        # 10k RPM disk: ~150 MB/s sequential read
+        disk_speed_bps = 150 * 1024 * 1024
+        est_seconds = total_size / disk_speed_bps if total_size > 0 else 0
+
+        return {
+            "resolved_path": safe_path,
+            "total_size_bytes": total_size,
+            "file_count": file_count,
+            "est_search_seconds": round(est_seconds, 2),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("static/index.html", "r") as f:
