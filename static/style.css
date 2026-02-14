@@ -146,12 +146,57 @@ input[type="checkbox"] {
     transform: translateY(1px);
 }
 
-.status-msg {
-    text-align: center;
+.mic-check-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.mic-check-btn.loading {
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 0.6;
+    }
+
+    50% {
+        opacity: 0.9;
+    }
+}
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin: 20px 0;
+}
+
+.status-msg {
     font-size: 1.2rem;
     color: var(--accent-tertiary);
     font-weight: bold;
+}
+
+.export-btn {
+    background-color: transparent;
+    border: 2px solid var(--accent-primary);
+    color: var(--accent-primary);
+    padding: 8px 18px;
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.export-btn:hover {
+    background-color: var(--accent-primary);
+    color: #000;
 }
 
 .variations-list {

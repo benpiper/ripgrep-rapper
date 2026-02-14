@@ -12,9 +12,10 @@ Line 10: Context line before that.
 Line 11: 404-555-1234 showing up again.
 Line 12: Context line after.
 Line 13: Context line after that.
+Line 15: Weird format 404 555-1234
 
 Long line test:
-This is a very long line that should be folded because it contains a lot of text but we only care about the match which is 404-555-1234 right here in the middle, and then the line continues for a very long time with irrelevant information that should probably be truncated by our folding logic if it works correctly. This represents a minified JS file or something similar.
+This is a very long line that should be folded because it contains a lot of text but we only care about the match which is 404-555-1234 right here in the middle, and then the line continues for a very long time with irrelevant information that should probably be truncated by our folding logic if it works correctly. This represents a minified JS file or something similar. 01234567890
 
 Another long line without match:
 This is just a long line with no match in it. It might show up as context if it's near a match. We want to see how the folding handles context lines that are super long but don't contain the highlighted term. It should truncate the end.
@@ -22,3 +23,18 @@ This is just a long line with no match in it. It might show up as context if it'
 404.555.1234 (Dot notation, might not be covered by current regex but let's see).
 
 End of file.
+
+test@example.com
+test@email.example.com
+
+John Smith
+Smith, John
+John D. Smith
+John D Smith
+John Doe Smith
+John,D,Smith
+John,Doe,Smith
+Smith,John,Doe
+Smith, John D
+Smith, John D.
+Smith, John Doe

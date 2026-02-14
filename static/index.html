@@ -31,10 +31,10 @@
                     <div class="input-group">
                         <label>FLOW TYPE</label>
                         <select class="type-select">
+                            <option value="generic">Generic</option>
+                            <option value="name">Name</option>
                             <option value="phone">Phone Number (Digits)</option>
                             <option value="email">Email</option>
-                            <option value="name">Name</option>
-                            <option value="generic">Generic</option>
                         </select>
                     </div>
                     <button class="remove-btn" onclick="removeRow(this)" style="display:none;">X</button>
@@ -58,7 +58,11 @@
         </section>
 
         <section id="results" class="results-area">
-            <div id="status-msg" class="status-msg">Ready to drop the beat...</div>
+            <div class="results-header">
+                <div id="status-msg" class="status-msg">Ready to drop the beat...</div>
+                <button id="export-btn" class="export-btn" style="display:none;" onclick="exportResults()">EXPORT
+                    RESULTS</button>
+            </div>
             <div id="command-executed" class="command-box"></div>
             <div id="variations-used" class="variations-list"></div>
             <div id="matches-container" class="matches-container"></div>
@@ -96,6 +100,7 @@
         }
 
         document.getElementById('search-btn').addEventListener('click', async () => {
+            const searchBtn = document.getElementById('search-btn');
             const searchPath = document.getElementById('search-path').value;
             const context = parseInt(document.getElementById('context').value);
             const fold = document.getElementById('fold').checked;
@@ -118,6 +123,11 @@
                 statusDiv.textContent = "You need to spit some bars first! (Enter a query)";
                 return;
             }
+
+            // Disable button and show loading state
+            searchBtn.disabled = true;
+            searchBtn.textContent = 'SEARCHING...';
+            searchBtn.classList.add('loading');
 
             statusDiv.textContent = "Dropping the beat... (Previewing Flow)";
             resultsDiv.innerHTML = '';
@@ -163,8 +173,12 @@
 
                 if (data.matches.length === 0) {
                     resultsDiv.innerHTML = '<div class="no-matches">No bars found for this flow.</div>';
+                    document.getElementById('export-btn').style.display = 'none';
                     return;
                 }
+
+                // Store results for export
+                window._lastSearchData = data;
 
                 let html = '';
                 let lastLineNum = -1;
@@ -190,8 +204,15 @@
 
                 resultsDiv.innerHTML = html;
 
+                // Show export button
+                document.getElementById('export-btn').style.display = 'inline-block';
+
             } catch (error) {
                 statusDiv.textContent = "Production Error: " + error.message;
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.textContent = 'MIC CHECK (Search)';
+                searchBtn.classList.remove('loading');
             }
         });
 
@@ -202,6 +223,51 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
+        }
+
+        function exportResults() {
+            const data = window._lastSearchData;
+            if (!data) return;
+
+            let lines = [];
+            lines.push('RIPGREP RAPPER - Search Results');
+            lines.push('='.repeat(40));
+            lines.push(`Query: ${data.original_query}`);
+            lines.push(`Command: ${data.command_executed}`);
+            lines.push(`Variations: ${JSON.stringify(data.variations)}`);
+            lines.push(`Total Matches: ${data.total_matches}`);
+            lines.push('');
+
+            let lastFilePath = null;
+            let lastLineNum = -1;
+
+            data.matches.forEach(match => {
+                if (match.file_path !== lastFilePath) {
+                    lines.push('');
+                    lines.push(`--- ${match.file_path} ---`);
+                    lastFilePath = match.file_path;
+                    lastLineNum = -1;
+                }
+
+                if (lastLineNum !== -1 && match.line_number > lastLineNum + 1) {
+                    lines.push('  ...');
+                }
+
+                const marker = match.is_match ? '>>>' : '   ';
+                lines.push(`${marker} ${String(match.line_number).padStart(5)}: ${match.content}`);
+                lastLineNum = match.line_number;
+            });
+
+            const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            a.download = `rg-results-${timestamp}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
     </script>
 </body>
