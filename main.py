@@ -313,6 +313,103 @@ async def search(request: SearchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/search/stream")
+async def search_stream(request: SearchRequest):
+    """Stream search results as newline-delimited JSON events."""
+    cmd, all_variations = prepare_search_command(request)
+    command_str = format_command_for_display(cmd)
+
+    def generate():
+        # First event: preview with command and variations
+        yield (
+            json.dumps(
+                {
+                    "event": "preview",
+                    "command_executed": command_str,
+                    "variations": all_variations,
+                }
+            )
+            + "\n"
+        )
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=".",
+            bufsize=1,
+        )
+
+        matches_count = 0
+        try:
+            for line in process.stdout:
+                try:
+                    data = json.loads(line)
+                    if data["type"] == "match":
+                        matches_count += 1
+                        content = data["data"]["lines"]["text"].rstrip()
+                        file_path = data["data"]["path"]["text"]
+                        if request.fold:
+                            content = fold_line(content, all_variations)
+                        yield (
+                            json.dumps(
+                                {
+                                    "event": "match",
+                                    "line_number": data["data"]["line_number"],
+                                    "content": content,
+                                    "is_match": True,
+                                    "file_path": file_path,
+                                    "count": matches_count,
+                                }
+                            )
+                            + "\n"
+                        )
+                    elif data["type"] == "context":
+                        content = data["data"]["lines"]["text"].rstrip()
+                        file_path = data["data"]["path"]["text"]
+                        if request.fold and len(content) > 1000:
+                            content = content[:1000] + "..."
+                        yield (
+                            json.dumps(
+                                {
+                                    "event": "context",
+                                    "line_number": data["data"]["line_number"],
+                                    "content": content,
+                                    "is_match": False,
+                                    "file_path": file_path,
+                                    "count": matches_count,
+                                }
+                            )
+                            + "\n"
+                        )
+                except json.JSONDecodeError:
+                    continue
+
+            process.wait()
+        except Exception:
+            process.kill()
+            process.wait()
+
+        # Final event: done
+        yield (
+            json.dumps(
+                {
+                    "event": "done",
+                    "total_matches": matches_count,
+                    "original_query": str([q.query for q in request.queries]),
+                    "variations": all_variations,
+                    "command_executed": command_str,
+                }
+            )
+            + "\n"
+        )
+
+    from starlette.responses import StreamingResponse
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
 class PathInfoRequest(BaseModel):
     search_path: str = "."
 

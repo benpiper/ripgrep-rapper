@@ -187,34 +187,25 @@
             searchBtn.textContent = 'SEARCHING...';
             searchBtn.classList.add('loading');
 
-            statusDiv.textContent = "Dropping the beat... (Previewing Flow)";
+            statusDiv.textContent = "Dropping the beat...";
             resultsDiv.innerHTML = '';
             variationsDiv.textContent = '';
             commandDiv.textContent = '';
+            document.getElementById('export-btn').style.display = 'none';
 
             const requestBody = JSON.stringify({ queries: queries, search_path: searchPath, context, fold });
 
+            // State for incremental rendering
+            let lastFilePath = null;
+            let lastLineNum = -1;
+            let matchesCount = 0;
+            let allMatches = [];  // For export
+            let streamData = {};  // Will hold preview/done info
+
             try {
-                // Peek the track first (Get command)
-                const previewResp = await fetch('/search/preview', {
+                const response = await fetch('/search/stream', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: requestBody
-                });
-
-                if (previewResp.ok) {
-                    const previewData = await previewResp.json();
-                    commandDiv.textContent = `$ ${previewData.command_executed}`;
-                }
-
-                statusDiv.textContent = "Dropping the beat... (Searching)";
-
-                // Now execute the full flow
-                const response = await fetch('/search', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
                     body: requestBody
                 });
 
@@ -222,48 +213,84 @@
                     throw new Error("Search failed");
                 }
 
-                const data = await response.json();
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
 
-                statusDiv.textContent = `Dropped ${data.total_matches} matches`;
-                variationsDiv.textContent = `Variations used: ${JSON.stringify(data.variations)}`;
-                // Update it again just in case, but preview should have set it
-                commandDiv.textContent = `$ ${data.command_executed}`;
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-                if (data.matches.length === 0) {
-                    resultsDiv.innerHTML = '<div class="no-matches">No bars found for this flow.</div>';
-                    document.getElementById('export-btn').style.display = 'none';
-                    return;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete last line in buffer
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        let event;
+                        try { event = JSON.parse(line); } catch { continue; }
+
+                        if (event.event === 'preview') {
+                            commandDiv.textContent = `$ ${event.command_executed}`;
+                            variationsDiv.textContent = `Variations used: ${JSON.stringify(event.variations)}`;
+                            streamData = event;
+                            statusDiv.textContent = "Scanning...";
+                        } else if (event.event === 'match' || event.event === 'context') {
+                            // Track for export
+                            allMatches.push(event);
+
+                            // File header
+                            if (event.file_path !== lastFilePath) {
+                                const hdr = document.createElement('div');
+                                hdr.className = 'file-header';
+                                hdr.textContent = event.file_path;
+                                resultsDiv.appendChild(hdr);
+                                lastFilePath = event.file_path;
+                                lastLineNum = -1;
+                            }
+
+                            // Gap separator
+                            if (lastLineNum !== -1 && event.line_number > lastLineNum + 1) {
+                                const sep = document.createElement('div');
+                                sep.className = 'separator';
+                                sep.textContent = '--- Scratch ---';
+                                resultsDiv.appendChild(sep);
+                            }
+
+                            // Result line
+                            const div = document.createElement('div');
+                            div.className = event.is_match ? 'line match' : 'line context';
+                            div.innerHTML = `<span class="line-num">${event.line_number}</span> <span class="content">${escapeHtml(event.content)}</span>`;
+                            resultsDiv.appendChild(div);
+                            lastLineNum = event.line_number;
+
+                            if (event.is_match) {
+                                matchesCount = event.count;
+                                statusDiv.textContent = `${matchesCount} matches found...`;
+                            }
+                        } else if (event.event === 'done') {
+                            matchesCount = event.total_matches;
+                            streamData.total_matches = matchesCount;
+                            streamData.original_query = event.original_query;
+                        }
+                    }
                 }
 
-                // Store results for export
-                window._lastSearchData = data;
+                statusDiv.textContent = `Dropped ${matchesCount} matches`;
 
-                let html = '';
-                let lastLineNum = -1;
-                let lastFilePath = null;
-
-                data.matches.forEach(match => {
-                    // Check if file changed
-                    if (match.file_path !== lastFilePath) {
-                        html += `<div class="file-header">${escapeHtml(match.file_path)}</div>`;
-                        lastFilePath = match.file_path;
-                        lastLineNum = -1; // Reset line num tracking for new file
-                    }
-
-                    // Add a separator if there's a gap in line numbers (within the same file)
-                    if (lastLineNum !== -1 && match.line_number > lastLineNum + 1) {
-                        html += '<div class="separator">--- Scratch ---</div>';
-                    }
-
-                    const lineClass = match.is_match ? 'line match' : 'line context';
-                    html += `<div class="${lineClass}"><span class="line-num">${match.line_number}</span> <span class="content">${escapeHtml(match.content)}</span></div>`;
-                    lastLineNum = match.line_number;
-                });
-
-                resultsDiv.innerHTML = html;
-
-                // Show export button
-                document.getElementById('export-btn').style.display = 'inline-block';
+                if (matchesCount === 0) {
+                    resultsDiv.innerHTML = '<div class="no-matches">No bars found for this flow.</div>';
+                } else {
+                    // Store results for export
+                    window._lastSearchData = {
+                        total_matches: matchesCount,
+                        original_query: streamData.original_query || '',
+                        command_executed: streamData.command_executed || '',
+                        variations: streamData.variations || [],
+                        matches: allMatches,
+                    };
+                    document.getElementById('export-btn').style.display = 'inline-block';
+                }
 
             } catch (error) {
                 statusDiv.textContent = "Production Error: " + error.message;
